@@ -20,16 +20,17 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.#
+import numpy as np
 import torch
 import yaml
-import numpy as np
 
-from ...util_file import get_mpc_configs_path as mpc_configs_path
-from ...mpc.rollout.arm_reacher import ArmReacher
 from ...mpc.control import MPPI
-from ...mpc.utils.state_filter import JointStateFilter
+from ...mpc.rollout.arm_reacher import ArmReacher
 from ...mpc.utils.mpc_process_wrapper import ControlProcess
-from ...util_file import get_assets_path, join_path, load_yaml, get_gym_configs_path
+from ...mpc.utils.state_filter import JointStateFilter
+from ...util_file import get_assets_path, get_gym_configs_path
+from ...util_file import get_mpc_configs_path as mpc_configs_path
+from ...util_file import join_path, load_yaml
 from .arm_task import ArmTask
 
 
@@ -39,12 +40,17 @@ class ReacherTask(ArmTask):
        :parts: 1
 
     """
-    def __init__(self, task_file='ur10.yml', robot_file='ur10_reacher.yml', world_file='collision_env.yml', tensor_args={'device':"cpu", 'dtype':torch.float32}):
-        
-        super().__init__(task_file=task_file, robot_file=robot_file,
-                         world_file=world_file, tensor_args=tensor_args)
+
+    def __init__(
+        self,
+        task_file="ur10.yml",
+        robot_file="ur10_reacher.yml",
+        world_file="collision_env.yml",
+        tensor_args={"device": "cpu", "dtype": torch.float32},
+    ):
+
+        super().__init__(task_file=task_file, robot_file=robot_file, world_file=world_file, tensor_args=tensor_args)
 
     def get_rollout_fn(self, **kwargs):
         rollout_fn = ArmReacher(**kwargs)
         return rollout_fn
-
