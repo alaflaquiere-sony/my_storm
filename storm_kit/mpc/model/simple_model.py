@@ -23,7 +23,7 @@
 
 #
 import matplotlib
-matplotlib.use('tkagg')
+matplotlib.use('WebAgg') #matplotlib.use('tkagg')
 import matplotlib.pyplot as plt
 import torch
 from typing import List, Tuple, Dict, Optional, Any

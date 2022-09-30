@@ -25,7 +25,7 @@ import torch
 torch.multiprocessing.set_start_method('spawn',force=True)
 import copy
 import matplotlib
-matplotlib.use('tkagg')
+matplotlib.use('WebAgg') #matplotlib.use('tkagg')
 
 import matplotlib.pyplot as plt
 
@@ -121,7 +121,7 @@ def holonomic_robot(args):
         t_step += sim_dt
         i += 1
         
-    matplotlib.use('tkagg')
+    matplotlib.use('WebAgg') #matplotlib.use('tkagg')
     plot_traj(traj_log)
 
 
@@ -175,6 +175,8 @@ def plot_traj(traj_log):
     axs[-1].set_xlim(traj_log['bounds'][0], traj_log['bounds'][1])
     axs[-1].set_ylim(traj_log['bounds'][2], traj_log['bounds'][3])
     plt.show()
+
+
 if __name__ == '__main__':
     
     # instantiate empty gym:
@@ -183,7 +185,5 @@ if __name__ == '__main__':
     parser.add_argument('--headless', action='store_true', default=False, help='headless gym')
     parser.add_argument('--control_space', type=str, default='acc', help='Robot to spawn')
     args = parser.parse_args()
-    
-    
     
     holonomic_robot(args)

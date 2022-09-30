@@ -146,7 +146,7 @@ class MPPI(OLGaussianMPC):
         #b = sum_seq.cpu().numpy()#.T
         #print(w, top_idx)
         #new_mean = sum_seq.T
-        #matplotlib.use('tkagg')
+        #matplotlib.use('WebAgg') #matplotlib.use('tkagg')
         self.mean_action = (1.0 - self.step_size_mean) * self.mean_action +\
             self.step_size_mean * new_mean
         #c = self.mean_action.cpu().numpy()

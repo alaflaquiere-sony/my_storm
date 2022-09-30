@@ -21,7 +21,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.#
 import matplotlib
-matplotlib.use('tkagg')
+matplotlib.use('WebAgg') #matplotlib.use('tkagg')
 import matplotlib.pyplot as plt
 
 import torch

@@ -27,7 +27,7 @@ import trimesh
 from trimesh.voxel.creation import voxelize
 import torch
 import matplotlib
-matplotlib.use('tkagg')
+matplotlib.use('WebAgg') #matplotlib.use('tkagg')
 
 import matplotlib.pyplot as plt
 
