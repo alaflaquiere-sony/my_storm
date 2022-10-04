@@ -124,14 +124,15 @@ def mpc_robot_interactive(args, gym_instance):
 
     franka_bl_state = np.array(
         # [-0.3, 0.3, 0.2, -2.0, 0.0, 2.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     )  #! ^^define target here^^
     x_des_list = [franka_bl_state]
 
     i = 0
     x_des = x_des_list[0]
 
-    mpc_control.update_params(goal_state=x_des)
+    # mpc_control.update_params(goal_state=x_des)
+    mpc_control.update_params(goal_ee_pos=[0.55, 0, 0.61], goal_ee_quat=[0.0, 0.99, -0.01, -0.01])
 
     # spawn object:
     x, y, z = 0.0, 0.0, 0.0
@@ -187,6 +188,11 @@ def mpc_robot_interactive(args, gym_instance):
     g_q = np.ravel(mpc_control.controller.rollout_fn.goal_ee_quat.cpu().numpy())
 
     while i > -100:
+
+        mpc_control.update_params(
+            goal_ee_pos=[0.55, 0, 0.61 - 0.5 * np.sin(0.01 * i)], goal_ee_quat=[0.0, 0.99, -0.01, -0.01]
+        )
+
         try:
             gym_instance.step()
             # if vis_ee_target:
