@@ -27,7 +27,7 @@ import copy
 
 from isaacgym import gymapi
 
-pass  # <-- just here to force the importation of torch after isaacgym
+pass  # <-- Alban: just here to force the importation of torch after isaacgym (isort tries to move the imports around)
 import torch
 
 torch.multiprocessing.set_start_method("spawn", force=True)
@@ -44,7 +44,6 @@ import argparse
 
 import numpy as np
 import yaml
-from quaternion import as_float_array, from_euler_angles
 from storm_kit.differentiable_robot_model.coordinate_transform import (
     CoordinateTransform,
     quaternion_to_matrix,
@@ -63,7 +62,7 @@ np.set_printoptions(precision=2)
 
 
 def mpc_robot_interactive(args, gym_instance):
-    vis_ee_target = False
+    vis_ee_target = True
     robot_file = args.robot + ".yml"
     task_file = args.robot + "_reacher.yml"
     world_file = "collision_primitives_3d.yml"
@@ -85,6 +84,7 @@ def mpc_robot_interactive(args, gym_instance):
         device = "cpu"
 
     sim_params["collision_model"] = None
+
     # create robot simulation:
     robot_sim = RobotSim(gym_instance=gym, sim_instance=sim, **sim_params, device=device)
 
@@ -96,12 +96,6 @@ def mpc_robot_interactive(args, gym_instance):
     device = torch.device("cuda", 0)
 
     tensor_args = {"device": device, "dtype": torch.float32}
-
-    # # spawn camera:
-    # robot_camera_pose = np.array([1.6, -1.5, 1.8, 0.0, 0.0, 0.0, 0.0])
-    # q = as_float_array(from_euler_angles(-0.5 * 90.0 * 0.01745, 50.0 * 0.01745, 90 * 0.01745))
-    # robot_camera_pose[3:] = np.array([q[1], q[2], q[3], q[0]])
-    # robot_sim.spawn_camera(env_ptr, 60, 640, 480, robot_camera_pose)  #! doesn't seem to be doing anything
 
     # get pose
     w_T_r = copy.deepcopy(robot_sim.spawn_robot_pose)
@@ -116,69 +110,56 @@ def mpc_robot_interactive(args, gym_instance):
 
     world_instance = World(gym, sim, env_ptr, world_params, w_T_r=w_T_r)
 
-    # get camera data: #! ??
+    # create MPC controller
     mpc_control = ReacherTask(task_file, robot_file, world_file, tensor_args)
-
-    # update goal:
-    mpc_tensor_dtype = {"device": device, "dtype": torch.float32}
-
-    franka_bl_state = np.array(
-        # [-0.3, 0.3, 0.2, -2.0, 0.0, 2.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    )  #! ^^define target here^^
-    x_des_list = [franka_bl_state]
-
-    i = 0
-    x_des = x_des_list[0]
 
     # mpc_control.update_params(goal_state=x_des)
     mpc_control.update_params(goal_ee_pos=[0.55, 0, 0.61], goal_ee_quat=[0.0, 0.99, -0.01, -0.01])
 
-    # spawn object:
-    x, y, z = 0.0, 0.0, 0.0
-    tray_color = gymapi.Vec3(0.8, 0.1, 0.1)
-    asset_options = gymapi.AssetOptions()
-    asset_options.armature = 0.001
-    asset_options.fix_base_link = True
-    asset_options.thickness = 0.002
+    if vis_ee_target:
+        # spawn object:
+        x, y, z = 0.0, 0.0, 0.0
+        tray_color = gymapi.Vec3(0.8, 0.1, 0.1)
+        asset_options = gymapi.AssetOptions()
+        asset_options.armature = 0.001
+        asset_options.fix_base_link = True
+        asset_options.thickness = 0.002
 
-    object_pose = gymapi.Transform()
-    object_pose.p = gymapi.Vec3(x, y, z)
-    object_pose.r = gymapi.Quat(0, 0, 0, 1)
+        object_pose = gymapi.Transform()
+        object_pose.p = gymapi.Vec3(x, y, z)
+        object_pose.r = gymapi.Quat(0, 0, 0, 1)
 
-    obj_asset_file = "urdf/mug/movable_mug.urdf"
-    obj_asset_root = get_assets_path()
+        # obj_asset_file = "urdf/mug/movable_mug.urdf"
+        obj_asset_file = "urdf/mug/mug.urdf"
+        obj_asset_root = get_assets_path()
 
-    # if vis_ee_target:
-    #     target_object = world_instance.spawn_object(
-    #         obj_asset_file, obj_asset_root, object_pose, color=tray_color, name="ee_target_object"
-    #     )
-    #     obj_base_handle = gym.get_actor_rigid_body_handle(env_ptr, target_object, 0)
-    #     obj_body_handle = gym.get_actor_rigid_body_handle(env_ptr, target_object, 6)
-    #     gym.set_rigid_body_color(env_ptr, target_object, 0, gymapi.MESH_VISUAL_AND_COLLISION, tray_color)
-    #     gym.set_rigid_body_color(env_ptr, target_object, 6, gymapi.MESH_VISUAL_AND_COLLISION, tray_color)
+        target_object = world_instance.spawn_object(
+            obj_asset_file, obj_asset_root, object_pose, color=tray_color, name="ee_target_object"
+        )
+        target_base_handle = gym.get_actor_rigid_body_handle(env_ptr, target_object, 0)
+        target_body_handle = gym.get_actor_rigid_body_handle(env_ptr, target_object, 6)
+        gym.set_rigid_body_color(env_ptr, target_object, 0, gymapi.MESH_VISUAL_AND_COLLISION, tray_color)
+        gym.set_rigid_body_color(env_ptr, target_object, 6, gymapi.MESH_VISUAL_AND_COLLISION, tray_color)
 
-    #     obj_asset_file = "urdf/mug/mug.urdf"
-    #     obj_asset_root = get_assets_path()
+        obj_asset_file = "urdf/mug/mug.urdf"
+        obj_asset_root = get_assets_path()
 
-    #     ee_handle = world_instance.spawn_object(
-    #         obj_asset_file, obj_asset_root, object_pose, color=tray_color, name="ee_current_as_mug"
-    #     )
-    #     ee_body_handle = gym.get_actor_rigid_body_handle(env_ptr, ee_handle, 0)
-    #     tray_color = gymapi.Vec3(0.0, 0.8, 0.0)
-    #     gym.set_rigid_body_color(env_ptr, ee_handle, 0, gymapi.MESH_VISUAL_AND_COLLISION, tray_color)
+        ee_handle = world_instance.spawn_object(
+            obj_asset_file, obj_asset_root, object_pose, color=tray_color, name="ee_current_as_mug"
+        )
+        ee_body_handle = gym.get_actor_rigid_body_handle(env_ptr, ee_handle, 0)
+        tray_color = gymapi.Vec3(0.0, 0.8, 0.0)
+        gym.set_rigid_body_color(env_ptr, ee_handle, 0, gymapi.MESH_VISUAL_AND_COLLISION, tray_color)
 
-    g_pos = np.ravel(mpc_control.controller.rollout_fn.goal_ee_pos.cpu().numpy())
-    g_q = np.ravel(mpc_control.controller.rollout_fn.goal_ee_quat.cpu().numpy())
-    object_pose.p = gymapi.Vec3(g_pos[0], g_pos[1], g_pos[2])
-    object_pose.r = gymapi.Quat(g_q[1], g_q[2], g_q[3], g_q[0])
-    object_pose = w_T_r * object_pose
-    # if vis_ee_target:
-    #     gym.set_rigid_transform(env_ptr, obj_base_handle, object_pose)
-    ee_pose = gymapi.Transform()
+        g_pos = np.ravel(mpc_control.controller.rollout_fn.goal_ee_pos.cpu().numpy())
+        g_q = np.ravel(mpc_control.controller.rollout_fn.goal_ee_quat.cpu().numpy())
+        object_pose.p = gymapi.Vec3(g_pos[0], g_pos[1], g_pos[2])
+        object_pose.r = gymapi.Quat(g_q[1], g_q[2], g_q[3], g_q[0])
+        object_pose = w_T_r * object_pose
+        gym.set_rigid_transform(env_ptr, target_base_handle, object_pose)
+
     w_robot_coord = CoordinateTransform(trans=w_T_robot[0:3, 3].unsqueeze(0), rot=w_T_robot[0:3, 0:3].unsqueeze(0))
 
-    tensor_args = mpc_tensor_dtype
     sim_dt = mpc_control.exp_params["control_dt"]
 
     q_des = None
@@ -187,16 +168,31 @@ def mpc_robot_interactive(args, gym_instance):
     g_pos = np.ravel(mpc_control.controller.rollout_fn.goal_ee_pos.cpu().numpy())
     g_q = np.ravel(mpc_control.controller.rollout_fn.goal_ee_quat.cpu().numpy())
 
+    ee_pose = gymapi.Transform()
+    i = 0
     while i > -100:
 
-        mpc_control.update_params(
-            goal_ee_pos=[0.55, 0, 0.61 - 0.5 * np.sin(0.01 * i)], goal_ee_quat=[0.0, 0.99, -0.01, -0.01]
-        )
-
         try:
+            # create a sinusoidally moving target
+            target_pos = [0.55, 0.0, 0.40 - 0.25 * np.sin(0.005 * i)]
+            target_quat = [0.0, 0.99, -0.01, -0.01]
+            mpc_control.update_params(goal_ee_pos=target_pos, goal_ee_quat=target_quat)
+
+            # move the red mug to the target position
+            target_pose_gym_format = gymapi.Transform()
+            target_pose_gym_format.p = gymapi.Vec3(target_pos[0], target_pos[1], target_pos[2])
+            target_pose_gym_format.r = gymapi.Quat(target_quat[1], target_quat[2], target_quat[3], target_quat[0])
+            target_pose_gym_format = copy.deepcopy(w_T_r) * copy.deepcopy(target_pose_gym_format)
+            gym.set_rigid_transform(env_ptr, target_base_handle, copy.deepcopy(target_pose_gym_format))
+
             gym_instance.step()
             # if vis_ee_target:
-            #     pose = copy.deepcopy(world_instance.get_pose(obj_body_handle))
+            #     pose = copy.deepcopy(world_instance.get_pose(target_body_handle))
+
+            #     # # >>>>> DEBUG
+            #     # print(">>>>", target_pos, target_pose_gym_format.p, pose.p)
+            #     # # <<<<< DEBUG
+
             #     pose = copy.deepcopy(w_T_r.inverse() * pose)
 
             #     if np.linalg.norm(g_pos - np.ravel([pose.p.x, pose.p.y, pose.p.z])) > 0.00001 or (
@@ -217,7 +213,7 @@ def mpc_robot_interactive(args, gym_instance):
 
             command = mpc_control.get_command(t_step, current_robot_state, control_dt=sim_dt, WAIT=True)
 
-            filtered_state_mpc = current_robot_state  # mpc_control.current_state
+            filtered_state_mpc = current_robot_state  # mpc_control.current_state #! why that here?!
             curr_state = np.hstack(
                 (filtered_state_mpc["position"], filtered_state_mpc["velocity"], filtered_state_mpc["acceleration"])
             )
@@ -238,10 +234,11 @@ def mpc_robot_interactive(args, gym_instance):
 
             ee_pose = copy.deepcopy(w_T_r) * copy.deepcopy(ee_pose)
 
-            # if vis_ee_target:
-            #     gym.set_rigid_transform(env_ptr, ee_body_handle, copy.deepcopy(ee_pose))
+            if vis_ee_target:
+                gym.set_rigid_transform(env_ptr, ee_body_handle, copy.deepcopy(ee_pose))
 
             print(
+                "time {:.3f} >>".format(gym_instance.get_sim_time()),
                 ["{:.3f}".format(x) for x in ee_error],
                 "{:.3f}".format(mpc_control.opt_dt),
                 "{:.3f}".format(mpc_control.mpc_dt),
