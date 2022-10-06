@@ -174,14 +174,28 @@ def mpc_robot_interactive(args, gym_instance):
 
         try:
             gym_instance.step()
+            t_step += sim_dt
 
             current_time = gym_instance.get_sim_time()
 
             # create a sinusoidally moving target (defined in the robot's base frame)
-            period = 5
+            period = 0.5
             amp = 0.25
-            center = 0.4
-            target_pos = [0.55, 0.0, center + amp * np.sin(2 * np.pi / period * current_time)]
+            center = [0.55, 0.0, 0.4]
+            n_planes = 8
+            target_pos = [
+                center[0]
+                + np.sin(np.floor(current_time / period) * 2 * np.pi / n_planes)
+                * 2
+                * amp
+                * np.sin(2 * np.pi / period * current_time),
+                center[1]
+                + np.cos(np.floor(current_time / period) * 2 * np.pi / n_planes)
+                * 2
+                * amp
+                * np.sin(2 * np.pi / period * current_time),
+                center[2] + amp * np.sin(2 * 2 * np.pi / period * current_time),
+            ]
             target_quat = [0.0, 0.99, -0.01, -0.01]
             mpc_control.update_params(goal_ee_pos=target_pos, goal_ee_quat=target_quat)
 
@@ -191,25 +205,6 @@ def mpc_robot_interactive(args, gym_instance):
             target_pose_gym_format.r = gymapi.Quat(target_quat[1], target_quat[2], target_quat[3], target_quat[0])
             target_pose_gym_format = copy.deepcopy(w_T_r) * copy.deepcopy(target_pose_gym_format)
             gym.set_rigid_transform(env_ptr, target_base_handle, copy.deepcopy(target_pose_gym_format))
-
-            # if vis_ee_target:
-            #     pose = copy.deepcopy(world_instance.get_pose(target_body_handle))
-
-            #     pose = copy.deepcopy(w_T_r.inverse() * pose)
-
-            #     if np.linalg.norm(g_pos - np.ravel([pose.p.x, pose.p.y, pose.p.z])) > 0.00001 or (
-            #         np.linalg.norm(g_q - np.ravel([pose.r.w, pose.r.x, pose.r.y, pose.r.z])) > 0.0
-            #     ):
-            #         g_pos[0] = pose.p.x
-            #         g_pos[1] = pose.p.y
-            #         g_pos[2] = pose.p.z
-            #         g_q[1] = pose.r.x
-            #         g_q[2] = pose.r.y
-            #         g_q[3] = pose.r.z
-            #         g_q[0] = pose.r.w
-
-            #         mpc_control.update_params(goal_ee_pos=g_pos, goal_ee_quat=g_q)
-            t_step += sim_dt
 
             current_robot_state = copy.deepcopy(robot_sim.get_state(env_ptr, robot_ptr))
 
