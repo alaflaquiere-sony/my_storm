@@ -173,25 +173,27 @@ def mpc_robot_interactive(args, gym_instance):
     while i > -100:
 
         try:
-            # create a sinusoidally moving target
-            target_pos = [0.55, 0.0, 0.40 - 0.25 * np.sin(0.005 * i)]
+            gym_instance.step()
+
+            current_time = gym_instance.get_sim_time()
+
+            # create a sinusoidally moving target (defined in the robot's base frame)
+            period = 5
+            amp = 0.25
+            center = 0.4
+            target_pos = [0.55, 0.0, center + amp * np.sin(2 * np.pi / period * current_time)]
             target_quat = [0.0, 0.99, -0.01, -0.01]
             mpc_control.update_params(goal_ee_pos=target_pos, goal_ee_quat=target_quat)
 
-            # move the red mug to the target position
+            # move the red mug to the target position for visualization (defined in the world frame)
             target_pose_gym_format = gymapi.Transform()
             target_pose_gym_format.p = gymapi.Vec3(target_pos[0], target_pos[1], target_pos[2])
             target_pose_gym_format.r = gymapi.Quat(target_quat[1], target_quat[2], target_quat[3], target_quat[0])
             target_pose_gym_format = copy.deepcopy(w_T_r) * copy.deepcopy(target_pose_gym_format)
             gym.set_rigid_transform(env_ptr, target_base_handle, copy.deepcopy(target_pose_gym_format))
 
-            gym_instance.step()
             # if vis_ee_target:
             #     pose = copy.deepcopy(world_instance.get_pose(target_body_handle))
-
-            #     # # >>>>> DEBUG
-            #     # print(">>>>", target_pos, target_pose_gym_format.p, pose.p)
-            #     # # <<<<< DEBUG
 
             #     pose = copy.deepcopy(w_T_r.inverse() * pose)
 
@@ -238,7 +240,7 @@ def mpc_robot_interactive(args, gym_instance):
                 gym.set_rigid_transform(env_ptr, ee_body_handle, copy.deepcopy(ee_pose))
 
             print(
-                "time {:.3f} >>".format(gym_instance.get_sim_time()),
+                "time {:.3f} >>".format(current_time),
                 ["{:.3f}".format(x) for x in ee_error],
                 "{:.3f}".format(mpc_control.opt_dt),
                 "{:.3f}".format(mpc_control.mpc_dt),
