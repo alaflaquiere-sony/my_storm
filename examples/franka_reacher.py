@@ -179,7 +179,7 @@ def mpc_robot_interactive(args, gym_instance):
             current_time = gym_instance.get_sim_time()
 
             # create a sinusoidally moving target (defined in the robot's base frame)
-            period = 0.5
+            period = 8
             amp = 0.25
             center = [0.55, 0.0, 0.4]
             n_planes = 8
