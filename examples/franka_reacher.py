@@ -62,44 +62,48 @@ np.set_printoptions(precision=2)
 
 
 def mpc_robot_interactive(args, gym_instance):
+
+    # parameters
     vis_ee_target = True
     robot_file = args.robot + ".yml"
     task_file = args.robot + "_reacher.yml"
     world_file = "collision_primitives_3d.yml"
 
+    # select gpu hardware
+    device = torch.device("cuda", 0)
+
+    # define tensor properties
+    tensor_args = {"device": device, "dtype": torch.float32}
+
+    # shortcuts to gym instance
     gym = gym_instance.gym
     sim = gym_instance.sim
+
+    # environment parameters
     world_yml = join_path(get_gym_configs_path(), world_file)
     with open(world_yml) as file:
         world_params = yaml.load(file, Loader=yaml.FullLoader)
 
+    # robot parameters
     robot_yml = join_path(get_gym_configs_path(), args.robot + ".yml")
     with open(robot_yml) as file:
         robot_params = yaml.load(file, Loader=yaml.FullLoader)
     sim_params = robot_params["sim_params"]
     sim_params["asset_root"] = get_assets_path()
-    if args.cuda:
-        device = "cuda"
-    else:
-        device = "cpu"
-
     sim_params["collision_model"] = None
 
     # create robot simulation:
     robot_sim = RobotSim(gym_instance=gym, sim_instance=sim, **sim_params, device=device)
 
-    # create gym environment:
+    # spawn robot in environment
     robot_pose = sim_params["robot_pose"]
     env_ptr = gym_instance.env_list[0]
     robot_ptr = robot_sim.spawn_robot(env_ptr, robot_pose, coll_id=2)
 
-    device = torch.device("cuda", 0)
-
-    tensor_args = {"device": device, "dtype": torch.float32}
-
-    # get pose
+    # tranformation from world to eef of robot in spawning position
     w_T_r = copy.deepcopy(robot_sim.spawn_robot_pose)
 
+    # same transformation in tensor form
     w_T_robot = torch.eye(4)
     quat = torch.tensor([w_T_r.r.w, w_T_r.r.x, w_T_r.r.y, w_T_r.r.z]).unsqueeze(0)
     rot = quaternion_to_matrix(quat)
@@ -108,6 +112,7 @@ def mpc_robot_interactive(args, gym_instance):
     w_T_robot[2, 3] = w_T_r.p.z
     w_T_robot[:3, :3] = rot[0]
 
+    # spawn obstacles in the environment #? ToCheck: they are defined with respect to the initial eef pose
     world_instance = World(gym, sim, env_ptr, world_params, w_T_r=w_T_r)
 
     # create MPC controller
@@ -117,7 +122,7 @@ def mpc_robot_interactive(args, gym_instance):
     mpc_control.update_params(goal_ee_pos=[0.55, 0, 0.61], goal_ee_quat=[0.0, 0.99, -0.01, -0.01])
 
     if vis_ee_target:
-        # spawn object:
+        # spawn target mug
         x, y, z = 0.0, 0.0, 0.0
         tray_color = gymapi.Vec3(0.8, 0.1, 0.1)
         asset_options = gymapi.AssetOptions()
@@ -129,25 +134,25 @@ def mpc_robot_interactive(args, gym_instance):
         object_pose.p = gymapi.Vec3(x, y, z)
         object_pose.r = gymapi.Quat(0, 0, 0, 1)
 
-        # obj_asset_file = "urdf/mug/movable_mug.urdf"
-        obj_asset_file = "urdf/mug/mug.urdf"
+        obj_asset_file = "urdf/mug/mug.urdf"  # obj_asset_file = "urdf/mug/movable_mug.urdf"
         obj_asset_root = get_assets_path()
 
         target_object = world_instance.spawn_object(
             obj_asset_file, obj_asset_root, object_pose, color=tray_color, name="ee_target_object"
         )
         target_base_handle = gym.get_actor_rigid_body_handle(env_ptr, target_object, 0)
-        target_body_handle = gym.get_actor_rigid_body_handle(env_ptr, target_object, 6)
+        # target_body_handle = gym.get_actor_rigid_body_handle(env_ptr, target_object, 6)
         gym.set_rigid_body_color(env_ptr, target_object, 0, gymapi.MESH_VISUAL_AND_COLLISION, tray_color)
         gym.set_rigid_body_color(env_ptr, target_object, 6, gymapi.MESH_VISUAL_AND_COLLISION, tray_color)
 
+        # spawn mug held by the eef
         obj_asset_file = "urdf/mug/mug.urdf"
         obj_asset_root = get_assets_path()
 
         ee_handle = world_instance.spawn_object(
             obj_asset_file, obj_asset_root, object_pose, color=tray_color, name="ee_current_as_mug"
         )
-        ee_body_handle = gym.get_actor_rigid_body_handle(env_ptr, ee_handle, 0)
+        ee_base_handle = gym.get_actor_rigid_body_handle(env_ptr, ee_handle, 0)
         tray_color = gymapi.Vec3(0.0, 0.8, 0.0)
         gym.set_rigid_body_color(env_ptr, ee_handle, 0, gymapi.MESH_VISUAL_AND_COLLISION, tray_color)
 
@@ -158,25 +163,25 @@ def mpc_robot_interactive(args, gym_instance):
         object_pose = w_T_r * object_pose
         gym.set_rigid_transform(env_ptr, target_base_handle, object_pose)
 
+    # create a class to easily tranform coordinates from one frame the another
     w_robot_coord = CoordinateTransform(trans=w_T_robot[0:3, 3].unsqueeze(0), rot=w_T_robot[0:3, 0:3].unsqueeze(0))
 
+    # simulation timestep #! assumed to be equal to the MPC timestep
     sim_dt = mpc_control.exp_params["control_dt"]
 
-    q_des = None
+    # initialize simulation step
     t_step = gym_instance.get_sim_time()
 
-    g_pos = np.ravel(mpc_control.controller.rollout_fn.goal_ee_pos.cpu().numpy())
-    g_q = np.ravel(mpc_control.controller.rollout_fn.goal_ee_quat.cpu().numpy())
-
+    # run the simu
     ee_pose = gymapi.Transform()
     i = 0
     while i > -100:
 
         try:
+            # step simulation and time forward
             gym_instance.step()
             t_step += sim_dt
-
-            current_time = gym_instance.get_sim_time()
+            current_time = gym_instance.get_sim_time()  # ? sim_time is only half t_step; why??
 
             # create a sinusoidally moving target (defined in the robot's base frame)
             period = 8
@@ -197,17 +202,21 @@ def mpc_robot_interactive(args, gym_instance):
                 center[2] + amp * np.sin(2 * 2 * np.pi / period * current_time),
             ]
             target_quat = [0.0, 0.99, -0.01, -0.01]
+            # set the new target for the mpc
             mpc_control.update_params(goal_ee_pos=target_pos, goal_ee_quat=target_quat)
 
-            # move the red mug to the target position for visualization (defined in the world frame)
-            target_pose_gym_format = gymapi.Transform()
-            target_pose_gym_format.p = gymapi.Vec3(target_pos[0], target_pos[1], target_pos[2])
-            target_pose_gym_format.r = gymapi.Quat(target_quat[1], target_quat[2], target_quat[3], target_quat[0])
-            target_pose_gym_format = copy.deepcopy(w_T_r) * copy.deepcopy(target_pose_gym_format)
-            gym.set_rigid_transform(env_ptr, target_base_handle, copy.deepcopy(target_pose_gym_format))
+            if vis_ee_target:
+                # move the red mug to the target position for visualization (defined in the world frame)
+                target_pose_gym_format = gymapi.Transform()
+                target_pose_gym_format.p = gymapi.Vec3(target_pos[0], target_pos[1], target_pos[2])
+                target_pose_gym_format.r = gymapi.Quat(target_quat[1], target_quat[2], target_quat[3], target_quat[0])
+                target_pose_gym_format = copy.deepcopy(w_T_r) * copy.deepcopy(target_pose_gym_format)
+                gym.set_rigid_transform(env_ptr, target_base_handle, copy.deepcopy(target_pose_gym_format))
 
+            # get current robot state
             current_robot_state = copy.deepcopy(robot_sim.get_state(env_ptr, robot_ptr))
 
+            # get next command from the MPC controller
             command = mpc_control.get_command(t_step, current_robot_state, control_dt=sim_dt, WAIT=True)
 
             filtered_state_mpc = current_robot_state  # mpc_control.current_state #! why that here?!
@@ -232,7 +241,7 @@ def mpc_robot_interactive(args, gym_instance):
             ee_pose = copy.deepcopy(w_T_r) * copy.deepcopy(ee_pose)
 
             if vis_ee_target:
-                gym.set_rigid_transform(env_ptr, ee_body_handle, copy.deepcopy(ee_pose))
+                gym.set_rigid_transform(env_ptr, ee_base_handle, copy.deepcopy(ee_pose))
 
             print(
                 "time {:.3f} >>".format(current_time),
@@ -241,11 +250,11 @@ def mpc_robot_interactive(args, gym_instance):
                 "{:.3f}".format(mpc_control.mpc_dt),
             )
 
+            # display predicted trajectories
             gym_instance.clear_lines()
             top_trajs = mpc_control.top_trajs.cpu().float()
             n_p, n_t = top_trajs.shape[0], top_trajs.shape[1]
             w_pts = w_robot_coord.transform_point(top_trajs.view(n_p * n_t, 3)).view(n_p, n_t, 3)
-
             top_trajs = w_pts.cpu().numpy()
             color = np.array([0.0, 1.0, 0.0])
             for k in range(top_trajs.shape[0]):
@@ -254,6 +263,7 @@ def mpc_robot_interactive(args, gym_instance):
                 color[1] = 1.0 - float(k) / float(top_trajs.shape[0])
                 gym_instance.draw_lines(pts, color=color)
 
+            # send the command to the robot
             robot_sim.command_robot_position(q_des, env_ptr, robot_ptr)
 
             i += 1
